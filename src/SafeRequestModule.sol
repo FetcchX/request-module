@@ -7,58 +7,129 @@ import {ISafeProtocolManager} from "@safe-global/safe-core-protocol/contracts/in
 import {PLUGIN_PERMISSION_NONE, PLUGIN_PERMISSION_EXECUTE_CALL, PLUGIN_PERMISSION_EXECUTE_DELEGATECALL} from "@safe-global/safe-core-protocol/contracts/common/Constants.sol";
 import {SafeTransaction, SafeRootAccess} from "@safe-global/safe-core-protocol/contracts/DataTypes.sol";
 
+struct RequestData {
+    bool isApproved;
+    uint48 validUntil;
+    uint48 validAfter;
+    uint256 maxAmount;
+    address receiver;
+    address tokenAddr;
+}
+
+struct RecurringRequest {
+    bool isApproved;
+    uint256 allowedAmount;
+    uint48 timePeriod;
+    uint48 timeLimit;
+    uint48 nextInterval;
+    address receiver;
+    address tokenAddr;
+}
+
 contract SafeRequestPlugin is ISafeProtocolPlugin {
-    string public name = "Request Plugin";
-    string public version = "0.0.1";
-    uint8 public permissions = PLUGIN_PERMISSION_EXECUTE_CALL;
+    /// @dev Name of plugin
+    string public constant NAME = "Request Module";
 
-    struct Request {
-        bool isApproved;
-        uint48 validUntil;
-        uint48 validAfter;
-        uint256 maxAmount;
-        address receiver;
-        address tokenAddr;
-    }
+    /// @dev Version of plugin
+    string public constant VERSION = "0.0.1";
 
-    struct RecurringRequest {
-        bool isApproved;
-        uint256 allowedAmount;
-        uint48 timePeriod;
-        uint48 timeLimit;
-        uint48 nextInterval;
-        address receiver;
-        address tokenAddr;
-    }
+    /// @dev Permission required by plugin
+    uint8 public constant PERMISSION = PLUGIN_PERMISSION_EXECUTE_CALL;
 
-    mapping(address => uint256) public requestCounter;
+    /// @dev mapping to keep track of request counter
+    mapping(address => uint256) private requestCounter;
 
-    mapping(address => mapping(uint256 => Request)) private requestSessions;
+    /// @dev mapping to keep track of request data for particular ids
+    mapping(address => mapping(uint256 => RequestData)) public requestSessions;
 
-    mapping(address => uint256) public recurringRequestCounter;
+    /// @dev mapping to keep track of recurring request counter
+    mapping(address => uint256) private recurringRequestCounter;
 
+    /// @dev mapping to keep track of recurring request data for particular ids
     mapping(address => mapping(uint256 => RecurringRequest))
-        private recurringRequestSessions;
+        public recurringRequestSessions;
 
+    /// @dev Trigger when request session is set
     event RequestSessionSet(address account, uint256 requestId);
+
+    /// @dev Trigger when request session is approved
+    event RequestSessionApproved(address account, uint256 requestId);
+
+    /// @dev Trigger when request is executed
+    event RequestExecuted(address account, uint256 requestId);
+
+    /// @dev Trigger when recurring request session is set
     event RecurringSessionSet(address account, uint256 recurringId);
 
-    event RequestExecuted(address account, uint256 requestId);
+    /// @dev Trigger when recurring request session is approved
+    event RecurringSessionApproved(address account, uint256 recurringId);
+
+    /// @dev Trigger when recurring request is executed
     event RecurringRequestExecuted(address account, uint256 recurringId);
 
+    /// @dev Error of time is invalid
     error InvalidTime();
+
+    /// @dev Error of amount is invalid
     error InvalidAmount();
+
+    /// @dev Error if address is invalid
     error InvalidAddr();
+
+    /// @dev Error if request is invalid
     error InvalidRequest();
+
+    /// @dev Error if length of array is invalid
     error InvalidLength();
+
+    /// @dev Error if recurring request is invalid
     error InvalidRecurringRequest();
 
-    function setRequestSession(Request memory _data) public {
+    /// @dev A funtion that returns name of the plugin
+    /// @return name string name of the plugin
+    function name() external view returns (string memory name) {
+        name = NAME;
+    }
+
+    /// @dev A function that returns version of the plugin
+    /// @return version string version of the plugin
+    function version() external view returns (string memory version) {
+        version = VERSION;
+    }
+
+    /// @dev A function that returns information about the type of metadata provider and its location
+    function metadataProvider()
+        external
+        view
+        override
+        returns (uint256 providerType, bytes memory location)
+    {}
+
+    /// @dev A function that indicates permissions required by the.
+    /// @dev Permissions types and value: EXECUTE_CALL = 1, CALL_TO_SELF = 2, EXECUTE_DELEGATECALL = 4.
+    /// @return permissions Bit-based permissions required by the plugin.
+    function requiresPermissions() external view override returns (uint8) {
+        return PERMISSION;
+    }
+
+    /// @dev This function is used to set request sessions
+    /// @param _data Request data object
+    function setRequestSession(RequestData memory _data) public {
         requestCounter[msg.sender] += 1;
         requestSessions[msg.sender][requestCounter[msg.sender]] = _data;
         emit RequestSessionSet(msg.sender, requestCounter[msg.sender]);
     }
 
+    /// @dev This function is used to approve request sessions
+    /// @param requestId Id of request to approve
+    function approveRequest(uint256 requestId) external {
+        if (requestId > requestCounter[msg.sender]) revert InvalidRequest();
+        requestSessions[msg.sender][requestId].isApproved = true;
+        emit RequestSessionApproved(msg.sender, requestId);
+    }
+
+    /// @dev This function is used to set recurring request sessions
+    /// @param _data Recurring request data object
     function setRecurringRequestSession(RecurringRequest memory _data) public {
         recurringRequestCounter[msg.sender] += 1;
         recurringRequestSessions[msg.sender][
@@ -70,17 +141,20 @@ contract SafeRequestPlugin is ISafeProtocolPlugin {
         );
     }
 
-    function approveRequest(uint256 requestId) external {
-        if (requestId > requestCounter[msg.sender]) revert InvalidRequest();
-        requestSessions[msg.sender][requestId].isApproved = true;
-    }
-
+    /// @dev This function is used to approve recurring request sessions
+    /// @param recurringId Id of recurring request to approve
     function approveRecurringRequest(uint256 recurringId) external {
         if (recurringId > recurringRequestCounter[msg.sender])
             revert InvalidRecurringRequest();
         recurringRequestSessions[msg.sender][recurringId].isApproved = true;
+        emit RecurringSessionApproved(msg.sender, recurringId);
     }
 
+    /// @dev This function is used to execute request by safe account
+    /// @param manager Address of safe account manager
+    /// @param account Address of safe account
+    /// @param safetx Safe transaction object
+    /// @param requestId Id of request to execute
     function execRequest(
         ISafeProtocolManager manager,
         address account,
@@ -88,7 +162,7 @@ contract SafeRequestPlugin is ISafeProtocolPlugin {
         uint256 requestId
     ) external returns (bytes[] memory data) {
         if (safetx.actions.length > 1) revert InvalidLength();
-        Request memory _data = requestSessions[account][requestId];
+        RequestData memory _data = requestSessions[account][requestId];
         if (_data.isApproved) {
             if (_data.validAfter > block.timestamp) revert InvalidTime();
             if (_data.validUntil < block.timestamp) revert InvalidTime();
@@ -107,6 +181,11 @@ contract SafeRequestPlugin is ISafeProtocolPlugin {
         emit RequestExecuted(account, requestId);
     }
 
+    /// @dev This function is used to execute recurring request by safe account
+    /// @param manager Address of safe account manager
+    /// @param account Address of safe account
+    /// @param safetx Safe transaction object
+    /// @param recurringId Id of recurring request to execute
     function execRecurringRequest(
         ISafeProtocolManager manager,
         address account,
@@ -137,6 +216,12 @@ contract SafeRequestPlugin is ISafeProtocolPlugin {
         emit RecurringRequestExecuted(account, recurringId);
     }
 
+    /// @dev This function is used to send new request session to safe account
+    /// @param validUntil End time of session
+    /// @param validAfter start time of session
+    /// @param amount Amount of tokens that can be transferred
+    /// @param receiver Address of receiver
+    /// @param token Address of token
     function newRequest(
         uint48 validUntil,
         uint48 validAfter,
@@ -144,7 +229,7 @@ contract SafeRequestPlugin is ISafeProtocolPlugin {
         address receiver,
         address token
     ) external {
-        Request memory newReq = Request(
+        RequestData memory newReq = RequestData(
             false,
             validUntil,
             validAfter,
@@ -155,6 +240,12 @@ contract SafeRequestPlugin is ISafeProtocolPlugin {
         setRequestSession(newReq);
     }
 
+    /// @dev This function is used to send new recurringrequest session to safe account
+    /// @param allowedAmount Amount of tokens that can be transferred per recurring session
+    /// @param timePeriod Recurring time intervals
+    /// @param timeLimit Max time limit for session
+    /// @param receiver Address of receiver
+    /// @param token Address of token
     function newRecurringRequest(
         uint256 allowedAmount,
         uint48 timePeriod,
@@ -174,32 +265,11 @@ contract SafeRequestPlugin is ISafeProtocolPlugin {
         setRecurringRequestSession(newRecurringReq);
     }
 
-    /**
-     * @dev returns the SessionStorage object for a given smartAccount
-     */
-    function getRequest(
-        address smartAccount,
-        uint256 requestId
-    ) external view returns (Request memory) {
-        return requestSessions[smartAccount][requestId];
-    }
-
     function supportsInterface(
         bytes4 interfaceId
     ) external view override returns (bool) {
         return
             interfaceId == type(ISafeProtocolPlugin).interfaceId ||
             interfaceId == 0x01ffc9a7;
-    }
-
-    function metadataProvider()
-        external
-        view
-        override
-        returns (uint256 providerType, bytes memory location)
-    {}
-
-    function requiresPermissions() external view override returns (uint8) {
-        return permissions;
     }
 }
