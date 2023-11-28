@@ -5,7 +5,7 @@ import {UserOperation, ValidatorBase} from "modulekit/modulekit/ValidatorBase.so
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-contract RequestValidator is ValidatorBase {
+contract RequestModule is ValidatorBase {
     struct RequestData {
         bool isApproved;
         uint48 validUntil;
@@ -23,10 +23,6 @@ contract RequestValidator is ValidatorBase {
     error InvalidAmount();
     error InvalidAddr();
     error InvalidRequest();
-
-    function enable(bytes calldata _data) external payable {}
-
-    function disable(bytes calldata) external payable {}
 
     function setRequestSessions(RequestData memory _data) public {
         requestCounter[msg.sender] += 1;

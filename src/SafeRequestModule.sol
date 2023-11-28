@@ -7,7 +7,7 @@ import {ISafeProtocolManager} from "@safe-global/safe-core-protocol/contracts/in
 import {PLUGIN_PERMISSION_NONE, PLUGIN_PERMISSION_EXECUTE_CALL, PLUGIN_PERMISSION_EXECUTE_DELEGATECALL} from "@safe-global/safe-core-protocol/contracts/common/Constants.sol";
 import {SafeTransaction, SafeRootAccess} from "@safe-global/safe-core-protocol/contracts/DataTypes.sol";
 
-contract RequestPlugin is ISafeProtocolPlugin {
+contract SafeRequestPlugin is ISafeProtocolPlugin {
     string public name = "Request Plugin";
     string public version = "0.0.1";
     uint8 public permissions = PLUGIN_PERMISSION_EXECUTE_CALL;
