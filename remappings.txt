@@ -1,2 +1,3 @@
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
 modulekit/=lib/modulekit/src/
+@safe-global/safe-core-protocol/=lib/safe-core-protocol/
